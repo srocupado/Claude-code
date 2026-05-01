@@ -1,0 +1,63 @@
+name: Monitor de Medidas Provisórias
+
+on:
+  schedule:
+    # 08h00 BRT (UTC-3) em dias úteis — ajuste o horário conforme necessário
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+    # Permite executar manualmente pela aba Actions do GitHub
+    inputs:
+      date:
+        description: 'Data específica (YYYY-MM-DD). Deixe em branco para usar hoje.'
+        required: false
+        default: ''
+
+jobs:
+  buscar-e-gerar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Executar monitor de MPs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          NOTIFY_IF_EMPTY: ${{ vars.NOTIFY_IF_EMPTY || 'false' }}
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python main.py --date "${{ github.event.inputs.date }}"
+          else
+            python main.py
+          fi
+
+      - name: Salvar notas técnicas como artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notas-tecnicas-${{ github.run_id }}
+          path: output/*.docx
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Salvar log como artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: log-${{ github.run_id }}
+          path: logs/mp_monitor.log
+          if-no-files-found: ignore
+          retention-days: 7
