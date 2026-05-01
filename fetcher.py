@@ -203,16 +203,41 @@ def _parse_dou_xml(xml_content: str, target_date: date) -> list[dict]:
     results = []
     seen: set[str] = set()
 
-    # Regex that matches only titles starting with the MP declaration
+    # Matches titles that START with the MP declaration
     TITLE_RE = re.compile(
         r"^\s*MEDIDA PROVIS[ÓO]RIA\s+N[ºo°\.°]?\s*([\d\.]+)",
         re.IGNORECASE,
     )
 
+    # Extracts the publication date embedded in the title, e.g.:
+    # "MEDIDA PROVISÓRIA Nº 1.353, DE 30 DE ABRIL DE 2026"
+    # Character class includes Ç (MARÇO) and all accented letters in month names
+    DATE_IN_TITLE_RE = re.compile(
+        r",\s*DE\s+(\d{1,2})[º°]?\s+DE\s+([A-ZÁÉÍÓÚÀÂÊÔÃÕÜÇ]+)\s+DE\s+(\d{4})",
+        re.IGNORECASE,
+    )
+
+    MONTHS_UPPER = {v: k for k, v in MONTHS_PT.items()}
+
+    def _date_matches_title(title_upper: str) -> bool:
+        """Returns True if the date inside the title equals target_date."""
+        dm = DATE_IN_TITLE_RE.search(title_upper)
+        if not dm:
+            # No date in title — accept cautiously (rare edge case)
+            return True
+        day, month_name, title_year = int(dm.group(1)), dm.group(2).upper(), int(dm.group(3))
+        month = MONTHS_UPPER.get(month_name)
+        if month is None:
+            return True  # Unrecognised month name — accept
+        return date(title_year, month, day) == target_date
+
     def _try_article(title_text: str, body_text: str) -> None:
         title_upper = title_text.strip().upper()
         m = TITLE_RE.match(title_upper)
         if not m:
+            return
+        # Reject old MPs: the date inside the title must match the target date
+        if not _date_matches_title(title_upper):
             return
         numero = m.group(1).replace(".", "")
         if numero in seen:
