@@ -100,17 +100,24 @@ def _fetch_planalto(target_date: date) -> list[dict] | None:
     index_url = f"{PLANALTO_BASE}/ccivil_03/_Ato{period}/{year}/Mpv/"
     date_str = _format_date_pt(target_date)
 
+    # Try both the canonical (mixed-case) and lowercase URL, as Planalto sometimes redirects
+    index_url_lower = index_url.lower()
     logger.info("Consultando Planalto: %s", index_url)
     session = _make_session()
-    try:
-        # Warm up the session with the Planalto homepage to get cookies
-        session.get(PLANALTO_BASE, timeout=15)
-        resp = session.get(index_url, timeout=20)
-        resp.raise_for_status()
-        resp.encoding = resp.apparent_encoding or "utf-8"
-    except requests.RequestException as exc:
-        logger.warning("Planalto indisponível (%s) – ativando fallback.", exc)
+    resp = None
+    for url_attempt in [index_url, index_url_lower]:
+        try:
+            session.get(PLANALTO_BASE, timeout=15)
+            resp = session.get(url_attempt, timeout=20, allow_redirects=True)
+            if resp.status_code == 200:
+                break
+            resp = None
+        except requests.RequestException:
+            resp = None
+    if resp is None:
+        logger.warning("Planalto indisponível – ativando fallback.")
         return None
+    resp.encoding = resp.apparent_encoding or "utf-8"
 
     soup = BeautifulSoup(resp.text, "html.parser")
     results = []
@@ -157,11 +164,18 @@ def _fetch_camara_fallback(target_date: date) -> list[dict]:
     )
     logger.info("Fallback – consultando API da Câmara: %s", url)
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)  # Câmara API doesn't block
+        resp = requests.get(url, headers=HEADERS, timeout=20)
         resp.raise_for_status()
+        body = resp.text.strip()
+        if not body:
+            logger.info("API da Câmara: resposta vazia (sem MPs para %s).", date_str)
+            return []
         items = resp.json().get("dados", [])
-    except Exception as exc:
-        logger.error("API da Câmara também falhou: %s", exc)
+    except requests.RequestException as exc:
+        logger.error("API da Câmara indisponível: %s", exc)
+        return []
+    except ValueError:
+        logger.warning("API da Câmara retornou resposta não-JSON (sem MPs para %s).", date_str)
         return []
 
     results = []
