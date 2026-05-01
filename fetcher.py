@@ -160,17 +160,28 @@ def _inlabs_login() -> str | None:
     password = getattr(config, "INLABS_PASSWORD", "")
     if not email or not password:
         return None
+
+    # Endpoint correto da API Inlabs (diferente da página de cadastro /acesso)
+    auth_url = f"{INLABS_BASE}/opendata/api/1/autenticar"
     try:
-        resp = requests.post(
-            f"{INLABS_BASE}/acesso",
-            json={"email": email, "password": password},
+        resp = requests.get(
+            auth_url,
+            params={"email": email, "senha": password},
             timeout=15,
         )
         resp.raise_for_status()
-        token = resp.json().get("token") or resp.headers.get("Authorization", "").replace("Bearer ", "")
-        return token or None
+        data = resp.json()
+        token = data.get("token") or data.get("access_token") or data.get("jwt")
+        if not token:
+            # Some versions return the token in the Authorization response header
+            token = resp.headers.get("Authorization", "").replace("Bearer ", "") or None
+        if token:
+            logger.info("Inlabs: autenticação OK.")
+        else:
+            logger.warning("Inlabs: autenticação OK mas token não encontrado na resposta: %s", list(data.keys()))
+        return token
     except Exception as exc:
-        logger.warning("Inlabs: falha na autenticação: %s", exc)
+        logger.warning("Inlabs: falha na autenticação (%s): %s", auth_url, exc)
         return None
 
 
@@ -178,8 +189,12 @@ def _fetch_inlabs(target_date: date) -> list[dict]:
     """Queries the Inlabs API (official DOU API) for MPs on target_date."""
     token = _inlabs_login()
     if not token:
-        logger.warning("Inlabs: credenciais ausentes (INLABS_EMAIL / INLABS_PASSWORD). Sem fallback disponível.")
-        logger.warning("Cadastro gratuito em: https://inlabs.in.gov.br/acesso")
+        email = getattr(config, "INLABS_EMAIL", "")
+        if not email:
+            logger.warning("Inlabs: INLABS_EMAIL e INLABS_PASSWORD não configurados.")
+            logger.warning("Cadastro gratuito em: https://inlabs.in.gov.br/acesso")
+        else:
+            logger.error("Inlabs: autenticação falhou. Verifique INLABS_EMAIL e INLABS_PASSWORD.")
         return []
 
     year = target_date.year
