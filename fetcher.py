@@ -21,10 +21,10 @@ MONTHS_PT = {
 PLANALTO_BASE = "https://www.planalto.gov.br"
 INLABS_BASE = "https://inlabs.in.gov.br"
 
-# Only check extra editions (DO1E) — new MPs are ALWAYS published there.
-# DO1 (regular section) causes false positives: it contains references to old MPs
-# inside portarias, decretos and other ministry acts.
-DOU_SECTIONS = ["DO1E"]
+# Check extra editions first (most common), then regular Section 1.
+# False positives are avoided by the XML parser, which matches only article
+# titles starting with "MEDIDA PROVISÓRIA Nº", not body-text references.
+DOU_SECTIONS = ["DO1E", "DO1"]
 
 HEADERS = {
     "User-Agent": (
