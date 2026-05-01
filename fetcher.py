@@ -1,6 +1,9 @@
+import io
 import re
 import logging
+import zipfile
 from datetime import date
+from xml.etree import ElementTree as ET
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,6 +21,9 @@ MONTHS_PT = {
 PLANALTO_BASE = "https://www.planalto.gov.br"
 INLABS_BASE = "https://inlabs.in.gov.br"
 
+# Sections where MPs can be published: Section 1 and Extra editions
+DOU_SECTIONS = ["DO1E", "DO1", "DO2E"]
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -30,12 +36,6 @@ HEADERS = {
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "DNT": "1",
 }
 
 
@@ -57,13 +57,14 @@ def _format_date_pt(d: date) -> str:
     return f"{day_str} DE {MONTHS_PT[d.month]} DE {d.year}"
 
 
-def _extract_numero(text: str, href: str) -> str:
+def _extract_numero(text: str, href: str = "") -> str:
     m = re.search(r"N[ºo°]?\s*([\d\.]+)", text, re.IGNORECASE)
     if m:
         return m.group(1).replace(".", "")
-    m = re.search(r"mpv(\d+)-", href.lower())
-    if m:
-        return m.group(1)
+    if href:
+        m = re.search(r"mpv(\d+)-", href.lower())
+        if m:
+            return m.group(1)
     return "???"
 
 
@@ -80,7 +81,7 @@ def _fetch_mp_page(url: str, session: requests.Session | None = None) -> tuple[s
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         ementa_lines = []
         for ln in lines[:20]:
-            if ln.upper().startswith("MEDIDA PROVISÓRIA") or ln.upper().startswith("A PRESIDENTA") or ln.upper().startswith("O PRESIDENTE"):
+            if re.match(r"(MEDIDA PROVISÓRIA|A PRESIDENTA|O PRESIDENTE)", ln, re.I):
                 break
             if len(ln) > 30:
                 ementa_lines.append(ln)
@@ -152,87 +153,71 @@ def _fetch_planalto(target_date: date) -> list[dict] | None:
     return results
 
 
-# ── Source 2: Inlabs API (DOU oficial) ───────────────────────────────────────
+# ── Source 2: Inlabs (DOU XML via Imprensa Nacional) ─────────────────────────
+# Authentication: POST /logar.php with form fields email + password
+# Returns session cookie: inlabs_session_cookie
+# Download: GET /index.php?p=DATE&dl=DATE-SECTION.zip  → ZIP with XML files
+# Reference: https://github.com/Imprensa-Nacional/inlabs
 
-def _inlabs_login() -> str | None:
-    """Authenticates with Inlabs and returns the JWT token."""
+def _inlabs_login() -> tuple[requests.Session, str] | None:
+    """Authenticates with Inlabs and returns (session, cookie_value)."""
     email = getattr(config, "INLABS_EMAIL", "")
     password = getattr(config, "INLABS_PASSWORD", "")
     if not email or not password:
+        logger.warning("Inlabs: INLABS_EMAIL / INLABS_PASSWORD não configurados.")
+        logger.warning("Cadastro gratuito em: https://inlabs.in.gov.br/acessar.php")
         return None
 
-    # Endpoint correto da API Inlabs (diferente da página de cadastro /acesso)
-    auth_url = f"{INLABS_BASE}/opendata/api/1/autenticar"
+    session = _make_session(referer=INLABS_BASE)
     try:
-        resp = requests.get(
-            auth_url,
-            params={"email": email, "senha": password},
-            timeout=15,
+        resp = session.post(
+            f"{INLABS_BASE}/logar.php",
+            data={"email": email, "password": password},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=20,
+            allow_redirects=True,
         )
         resp.raise_for_status()
-        data = resp.json()
-        token = data.get("token") or data.get("access_token") or data.get("jwt")
-        if not token:
-            # Some versions return the token in the Authorization response header
-            token = resp.headers.get("Authorization", "").replace("Bearer ", "") or None
-        if token:
-            logger.info("Inlabs: autenticação OK.")
-        else:
-            logger.warning("Inlabs: autenticação OK mas token não encontrado na resposta: %s", list(data.keys()))
-        return token
+        cookie = session.cookies.get("inlabs_session_cookie")
+        if not cookie:
+            logger.error("Inlabs: autenticação falhou — cookie não retornado. Verifique e-mail/senha.")
+            return None
+        logger.info("Inlabs: autenticação OK.")
+        return session, cookie
     except Exception as exc:
-        logger.warning("Inlabs: falha na autenticação (%s): %s", auth_url, exc)
+        logger.error("Inlabs: falha ao autenticar em /logar.php: %s", exc)
         return None
 
 
-def _fetch_inlabs(target_date: date) -> list[dict]:
-    """Queries the Inlabs API (official DOU API) for MPs on target_date."""
-    token = _inlabs_login()
-    if not token:
-        email = getattr(config, "INLABS_EMAIL", "")
-        if not email:
-            logger.warning("Inlabs: INLABS_EMAIL e INLABS_PASSWORD não configurados.")
-            logger.warning("Cadastro gratuito em: https://inlabs.in.gov.br/acesso")
-        else:
-            logger.error("Inlabs: autenticação falhou. Verifique INLABS_EMAIL e INLABS_PASSWORD.")
-        return []
-
+def _parse_dou_xml(xml_content: str, target_date: date) -> list[dict]:
+    """Parses DOU XML content and extracts MP articles."""
     year = target_date.year
     period = _planalto_period(year)
-    date_str = target_date.strftime("%Y-%m-%d")
-
-    url = (
-        f"{INLABS_BASE}/opendata/api/1/busca"
-        f"?q=%22Medida+Provis%C3%B3ria%22"
-        f"&s=do1%2Cdoe"        # Seção 1 + Edições Extras
-        f"&dtInicio={date_str}"
-        f"&dtFim={date_str}"
-    )
-    logger.info("Consultando Inlabs/DOU: %s", url)
-
-    try:
-        resp = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=25,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as exc:
-        logger.error("Inlabs API falhou: %s", exc)
-        return []
-
-    items = data if isinstance(data, list) else data.get("items", data.get("results", []))
     results = []
     seen = set()
 
-    for item in items:
-        title = item.get("title", "") or item.get("titulo", "")
+    try:
+        root = ET.fromstring(xml_content)
+    except ET.ParseError:
+        # Try BeautifulSoup as fallback for malformed XML
+        soup = BeautifulSoup(xml_content, "lxml-xml")
+        articles = soup.find_all(re.compile(r"article|Artigo|ARTICLE", re.I))
+        if not articles:
+            # Try generic text search on the raw content
+            for m in re.finditer(r"MEDIDA PROVIS[ÓO]RIA\s+N[ºo°]?\s*([\d\.]+)", xml_content, re.I):
+                numero = m.group(1).replace(".", "")
+                if numero not in seen:
+                    seen.add(numero)
+                    results.append(_build_mp_dict(numero, year, period, xml_content[:2000], target_date))
+        return results
+
+    # Walk all elements looking for MP titles
+    for elem in root.iter():
+        title = elem.get("title") or (elem.text or "")
         title_upper = title.upper()
         if "MEDIDA PROVIS" not in title_upper:
             continue
-
-        m = re.search(r"N[ºo°]?\s*([\d\.]+)", title_upper)
+        m = re.search(r"MEDIDA PROVIS[ÓO]RIA\s+N[ºo°]?\s*([\d\.]+)", title_upper)
         if not m:
             continue
         numero = m.group(1).replace(".", "")
@@ -240,27 +225,88 @@ def _fetch_inlabs(target_date: date) -> list[dict]:
             continue
         seen.add(numero)
 
-        ementa = item.get("ementa") or item.get("abstract") or title
-        dou_url = item.get("urlTitle") or item.get("url") or ""
-        ano2d = str(year)[-2:]
-        planalto_url = (
-            f"{PLANALTO_BASE}/ccivil_03/_Ato{period}/{year}/Mpv/"
-            f"mpv{numero}-{ano2d}.htm"
-        )
+        # Try to get body text from sibling/child elements
+        body = ""
+        parent = elem.getparent() if hasattr(elem, "getparent") else None
+        if parent is not None:
+            body = ET.tostring(parent, encoding="unicode", method="text")
+        if not body:
+            body = ET.tostring(elem, encoding="unicode", method="text")
 
-        _, texto = _fetch_mp_page(planalto_url)
-        if not texto and dou_url:
-            _, texto = _fetch_mp_page(dou_url)
+        results.append(_build_mp_dict(numero, year, period, body, target_date))
 
-        logger.info("  [Inlabs] MP nº %s encontrada.", numero)
-        results.append({
-            "numero": numero,
-            "ano": year,
-            "ementa": ementa,
-            "data_publicacao": target_date.isoformat(),
-            "url_planalto": planalto_url,
-            "texto_integral": texto or ementa,
-        })
+    return results
+
+
+def _build_mp_dict(numero: str, year: int, period: str, text_excerpt: str, target_date: date) -> dict:
+    ano2d = str(year)[-2:]
+    planalto_url = (
+        f"{PLANALTO_BASE}/ccivil_03/_Ato{period}/{year}/Mpv/"
+        f"mpv{numero}-{ano2d}.htm"
+    )
+    ementa = text_excerpt[:300].strip()
+    _, texto_planalto = _fetch_mp_page(planalto_url)
+    return {
+        "numero": numero,
+        "ano": year,
+        "ementa": ementa,
+        "data_publicacao": target_date.isoformat(),
+        "url_planalto": planalto_url,
+        "texto_integral": texto_planalto or text_excerpt[:6000],
+    }
+
+
+def _fetch_inlabs(target_date: date) -> list[dict]:
+    """Downloads DOU XML from Inlabs and extracts MPs for target_date."""
+    auth = _inlabs_login()
+    if not auth:
+        return []
+    session, cookie = auth
+
+    date_str = target_date.strftime("%Y-%m-%d")
+    results = []
+    seen_numeros: set[str] = set()
+
+    for section in DOU_SECTIONS:
+        dl_param = f"{date_str}-{section}.zip"
+        url = f"{INLABS_BASE}/index.php?p={date_str}&dl={dl_param}"
+        logger.info("  [Inlabs] Baixando %s...", dl_param)
+
+        try:
+            resp = session.get(
+                url,
+                headers={"Cookie": f"inlabs_session_cookie={cookie}"},
+                timeout=60,
+                stream=True,
+            )
+            if resp.status_code == 404:
+                logger.info("  [Inlabs] %s não publicado em %s (sem edição extra).", section, date_str)
+                continue
+            resp.raise_for_status()
+
+            content = resp.content
+            if len(content) < 100:
+                logger.info("  [Inlabs] %s: arquivo vazio (sem publicação).", section)
+                continue
+
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                for name in zf.namelist():
+                    if not name.lower().endswith(".xml"):
+                        continue
+                    xml_data = zf.read(name).decode("utf-8", errors="replace")
+                    if "MEDIDA PROVIS" not in xml_data.upper():
+                        continue
+                    logger.info("  [Inlabs] MP(s) encontrada(s) em %s/%s", section, name)
+                    for mp in _parse_dou_xml(xml_data, target_date):
+                        if mp["numero"] not in seen_numeros:
+                            seen_numeros.add(mp["numero"])
+                            results.append(mp)
+                            logger.info("    → MP nº %s/%s", mp["numero"], mp["ano"])
+
+        except zipfile.BadZipFile:
+            logger.warning("  [Inlabs] %s: arquivo ZIP inválido.", section)
+        except Exception as exc:
+            logger.warning("  [Inlabs] Erro ao processar %s: %s", section, exc)
 
     if not results:
         logger.info("Inlabs: nenhuma MP encontrada em %s.", date_str)
