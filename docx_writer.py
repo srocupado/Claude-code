@@ -22,9 +22,11 @@ logger = logging.getLogger(__name__)
 OUTPUT_DIR   = "output"
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.docx")
 
-COLOR_TEXT  = RGBColor(0x33, 0x33, 0x33)   # #333333 — template color
-COLOR_RED   = RGBColor(0xFF, 0x00, 0x00)   # emendas deadline
-COLOR_BLACK = RGBColor(0x00, 0x00, 0x00)   # table label cells
+COLOR_TEXT   = RGBColor(0x33, 0x33, 0x33)   # #333333 — template color
+COLOR_RED    = RGBColor(0xFF, 0x00, 0x00)   # emendas deadline
+COLOR_BLACK  = RGBColor(0x00, 0x00, 0x00)   # table label cells
+COLOR_PURPLE = RGBColor(0x6B, 0x4E, 0x8B)   # objetivos box background
+COLOR_WHITE  = RGBColor(0xFF, 0xFF, 0xFF)   # objetivos box text
 
 
 def _set_margins(doc: Document, top=2.0, bottom=2.0, left=3.0, right=1.5):
@@ -204,18 +206,99 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
     return emendas_end
 
 
-def _add_atencao(doc: Document, emendas_end: date):
-    """Red bold notice about amendment submission deadline."""
-    para = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    text = (
-        f"A T E N Ç Ã O !  "
-        f"AS EMENDAS DEVERÃO SER ENVIADAS PELO INFOLEG-AUTENTICADOR "
-        f"ATÉ 23h59min DO DIA {emendas_end.strftime('%d/%m/%Y')}."
-    )
-    r = para.add_run(text)
+def _add_atencao_box(doc: Document, emendas_end: date):
+    """ATENÇÃO notice inside a single-cell bordered box."""
+    table = doc.add_table(rows=1, cols=1)
+    tbl   = table._tbl
+
+    tblPr = tbl.find(qn("w:tblPr"))
+    if tblPr is None:
+        tblPr = OxmlElement("w:tblPr")
+        tbl.insert(0, tblPr)
+
+    # Full-width table
+    tblW = OxmlElement("w:tblW")
+    tblW.set(qn("w:w"), "0")
+    tblW.set(qn("w:type"), "auto")
+    tblPr.append(tblW)
+
+    # Black single border on all four sides
+    tblBorders = OxmlElement("w:tblBorders")
+    for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        b = OxmlElement(f"w:{side}")
+        b.set(qn("w:val"),   "single")
+        b.set(qn("w:sz"),    "8")
+        b.set(qn("w:space"), "0")
+        b.set(qn("w:color"), "000000")
+        tblBorders.append(b)
+    tblPr.append(tblBorders)
+
+    cell = table.cell(0, 0)
+    tc   = cell._tc
+    tcPr = tc.find(qn("w:tcPr"))
+    if tcPr is None:
+        tcPr = OxmlElement("w:tcPr")
+        tc.insert(0, tcPr)
+    tcMar = OxmlElement("w:tcMar")
+    for side, val in (("top", "60"), ("left", "108"), ("bottom", "60"), ("right", "108")):
+        m = OxmlElement(f"w:{side}")
+        m.set(qn("w:w"),    val)
+        m.set(qn("w:type"), "dxa")
+        tcMar.append(m)
+    tcPr.append(tcMar)
+
+    # Line 1: "A T E N Ç Ã O !" in red bold centered
+    p0 = cell.paragraphs[0]
+    p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p0.paragraph_format.space_before = Pt(0)
+    p0.paragraph_format.space_after  = Pt(0)
+    r0 = p0.add_run("A T E N Ç Ã O !")
+    r0.bold           = True
+    r0.font.size      = Pt(10)
+    r0.font.color.rgb = COLOR_RED
+    r0.font.name      = "Arial"
+
+    # Line 2: main text with highlighted date
+    p1 = cell.add_paragraph()
+    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p1.paragraph_format.space_before = Pt(0)
+    p1.paragraph_format.space_after  = Pt(0)
+
+    prefix = "AS EMENDAS DEVERÃO SER ENVIADAS PELO INFOLEG-AUTENTICADOR ATÉ 23h59min DO DIA "
+    r1 = p1.add_run(prefix)
+    r1.bold           = True
+    r1.font.size      = Pt(10)
+    r1.font.color.rgb = COLOR_BLACK
+    r1.font.name      = "Arial"
+
+    date_str = emendas_end.strftime("%d/%m/%Y") + "."
+    r2 = p1.add_run(date_str)
+    r2.bold           = True
+    r2.font.size      = Pt(10)
+    r2.font.color.rgb = COLOR_BLACK
+    r2.font.name      = "Arial"
+    # Yellow highlight on date
+    rPr = r2._r.get_or_add_rPr()
+    highlight = OxmlElement("w:highlight")
+    highlight.set(qn("w:val"), "yellow")
+    rPr.append(highlight)
+
+
+def _add_objetivos_box(doc: Document):
+    """Purple filled paragraph with white bold centered text as section separator."""
+    para = _new_para(doc, WD_ALIGN_PARAGRAPH.CENTER)
+    para.paragraph_format.space_before = Pt(4)
+    para.paragraph_format.space_after  = Pt(4)
+    pPr = para._p.get_or_add_pPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"),   "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"),  "6B4E8B")
+    pPr.append(shd)
+    r = para.add_run("OBJETIVOS DA MEDIDA PROVISÓRIA")
     r.bold           = True
-    r.font.size      = Pt(10)
-    r.font.color.rgb = COLOR_RED
+    r.font.size      = Pt(12)
+    r.font.color.rgb = COLOR_WHITE
     r.font.name      = "Arial"
 
 
@@ -254,7 +337,7 @@ def _add_labeled_block(doc: Document, label: str, body: str):
     _add_body_text(doc, body)
 
 
-def _add_body_text(doc: Document, text: str):
+def _add_body_text(doc: Document, text: str, indent: bool = False):
     """Split on double newlines → one paragraph; single newline → line break."""
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     if not paragraphs:
@@ -262,6 +345,8 @@ def _add_body_text(doc: Document, text: str):
     for para_text in paragraphs:
         lines = para_text.splitlines()
         para = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+        if indent:
+            para.paragraph_format.first_line_indent = Cm(1.25)
         for j, line in enumerate(lines):
             r = para.add_run(line)
             r.font.size      = Pt(12)
@@ -275,9 +360,7 @@ def _add_body_text(doc: Document, text: str):
 def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) -> str:
     os.makedirs(output_dir, exist_ok=True)
 
-    pub_date  = date.fromisoformat(mp["data_publicacao"]) if mp.get("data_publicacao") else date.today()
-    prazo_60  = pub_date + timedelta(days=60)
-    prazo_120 = pub_date + timedelta(days=120)
+    pub_date = date.fromisoformat(mp["data_publicacao"]) if mp.get("data_publicacao") else date.today()
 
     # Open template as base — inherits all styles, fonts and theme
     doc = Document(TEMPLATE_PATH) if os.path.exists(TEMPLATE_PATH) else Document()
@@ -288,7 +371,8 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     # python-docx Document() has no default paragraph, just sectPr.
     # add_table() inserts before sectPr → table ends up at body[0]. ✓
     emendas_end = _add_prazos_table(doc, pub_date)
-    _add_atencao(doc, emendas_end)
+    _blank(doc)
+    _add_atencao_box(doc, emendas_end)
     _blank(doc)
 
     # ── Title & subtitle ──────────────────────────────────────────────────────
@@ -299,18 +383,34 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     _add_divider(doc)
 
     # ── Identification line ───────────────────────────────────────────────────
-    ident = (
+    para_ident = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+    prefix_text = (
         f"A Edição do Diário Oficial da União de {_date_pt(pub_date)} publicou a "
-        f"Medida Provisória nº {mp['numero']}/{mp['ano']}, que {mp.get('ementa', '')}."
+        f"Medida Provisória nº {mp['numero']}/{mp['ano']}, que "
     )
-    _add_body_text(doc, ident)
-    _add_divider(doc)
+    r_prefix = para_ident.add_run(prefix_text)
+    r_prefix.font.size      = Pt(12)
+    r_prefix.font.color.rgb = COLOR_TEXT
+
+    ementa_text = f"“{mp.get('ementa', '')}”"
+    r_ementa = para_ident.add_run(ementa_text)
+    r_ementa.italic         = True
+    r_ementa.font.size      = Pt(12)
+    r_ementa.font.color.rgb = COLOR_TEXT
+
+    r_period = para_ident.add_run(".")
+    r_period.font.size      = Pt(12)
+    r_period.font.color.rgb = COLOR_TEXT
+
+    _blank(doc)
+    _add_objetivos_box(doc)
+    _blank(doc)
 
     # ── Content: resumo + alterações ─────────────────────────────────────────
     if content.get("resumo"):
-        _add_body_text(doc, content["resumo"])
+        _add_body_text(doc, content["resumo"], indent=True)
     if content.get("alteracoes"):
-        _add_body_text(doc, content["alteracoes"])
+        _add_body_text(doc, content["alteracoes"], indent=True)
 
     # ── Fixed closing block (hardcoded — not generated by AI) ─────────────────
     _blank(doc)
