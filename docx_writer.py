@@ -20,8 +20,9 @@ from docx.oxml import OxmlElement
 
 logger = logging.getLogger(__name__)
 
-OUTPUT_DIR   = "output"
+OUTPUT_DIR    = "output"
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.docx")
+LOGO_PATH     = os.path.join(os.path.dirname(__file__), "podemos_logo.png")
 
 COLOR_TEXT   = RGBColor(0x33, 0x33, 0x33)   # #333333 — template color
 COLOR_RED    = RGBColor(0xFF, 0x00, 0x00)   # emendas deadline
@@ -133,7 +134,7 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
 
     # ── Column grid (widths) ──────────────────────────────────────────────────
     tblGrid = OxmlElement("w:tblGrid")
-    for w in (1956, 3125):
+    for w in (1356, 3725):
         gc = OxmlElement("w:gridCol")
         gc.set(qn("w:w"), str(w))
         tblGrid.append(gc)
@@ -260,13 +261,13 @@ def _add_atencao_box(doc: Document, emendas_end: date):
     r0.font.color.rgb = COLOR_RED
     r0.font.name      = "Arial"
 
-    # Line 2: main text with highlighted date
+    # Line 2: main text then "23h59min DO DIA date" in red
     p1 = cell.add_paragraph()
     p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p1.paragraph_format.space_before = Pt(0)
     p1.paragraph_format.space_after  = Pt(0)
 
-    prefix = "AS EMENDAS DEVERÃO SER ENVIADAS PELO INFOLEG-AUTENTICADOR ATÉ 23h59min DO DIA "
+    prefix = "AS EMENDAS DEVERÃO SER ENVIADAS PELO INFOLEG-AUTENTICADOR ATÉ "
     r1 = p1.add_run(prefix)
     r1.bold           = True
     r1.font.size      = Pt(10)
@@ -274,16 +275,12 @@ def _add_atencao_box(doc: Document, emendas_end: date):
     r1.font.name      = "Arial"
 
     date_str = emendas_end.strftime("%d/%m/%Y") + "."
-    r2 = p1.add_run(date_str)
+    red_text = "23h59min DO DIA " + date_str
+    r2 = p1.add_run(red_text)
     r2.bold           = True
     r2.font.size      = Pt(10)
-    r2.font.color.rgb = COLOR_BLACK
+    r2.font.color.rgb = COLOR_RED
     r2.font.name      = "Arial"
-    # Yellow highlight on date
-    rPr = r2._r.get_or_add_rPr()
-    highlight = OxmlElement("w:highlight")
-    highlight.set(qn("w:val"), "yellow")
-    rPr.append(highlight)
 
 
 def _add_objetivos_box(doc: Document):
@@ -309,27 +306,100 @@ def _add_objetivos_box(doc: Document):
 def _set_header(doc: Document, title: str, subtitle: str):
     """Put title + subtitle in the Word page header (repeats on every page)."""
     header = doc.sections[0].header
-    # Drop all existing paragraphs from the header body, then rebuild
+    # Drop all existing paragraphs and tables from the header body, then rebuild
     hdr_body = header._element
     for child in list(hdr_body):
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag == "p":
+        if tag in ("p", "tbl"):
             hdr_body.remove(child)
 
-    def _hdr_para(text: str) -> None:
-        p = header.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(0)
-        p.paragraph_format.space_after  = Pt(0)
-        r = p.add_run(text)
-        r.bold           = True
+    def _hdr_run(para, text: str) -> None:
+        r = para.add_run(text)
+        r.bold           = False
         r.font.size      = Pt(12)
         r.font.name      = "Calibri"
         r.font.color.rgb = COLOR_TEXT
 
-    _hdr_para(title)
-    _hdr_para("")
-    _hdr_para(subtitle)
+    # Blank line at the very top of the header
+    p_blank = header.add_paragraph()
+    p_blank.paragraph_format.space_before = Pt(0)
+    p_blank.paragraph_format.space_after  = Pt(0)
+
+    has_logo = os.path.exists(LOGO_PATH)
+
+    if has_logo:
+        # Table: [title + subtitle centered | logo right-aligned]
+        tbl_hdr = header.add_table(rows=1, cols=2)
+        _tbl = tbl_hdr._tbl
+
+        tblPr = _tbl.find(qn("w:tblPr"))
+        if tblPr is None:
+            tblPr = OxmlElement("w:tblPr")
+            _tbl.insert(0, tblPr)
+
+        # No borders
+        tblBorders = OxmlElement("w:tblBorders")
+        for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            b = OxmlElement(f"w:{side}")
+            b.set(qn("w:val"),   "none")
+            b.set(qn("w:sz"),    "0")
+            b.set(qn("w:space"), "0")
+            b.set(qn("w:color"), "auto")
+            tblBorders.append(b)
+        tblPr.append(tblBorders)
+
+        tblW = OxmlElement("w:tblW")
+        tblW.set(qn("w:w"), "0")
+        tblW.set(qn("w:type"), "auto")
+        tblPr.append(tblW)
+
+        # Column grid: text col 8220 dxa, logo col 1134 dxa (≈2 cm)
+        tblGrid = OxmlElement("w:tblGrid")
+        for w in (8220, 1134):
+            gc = OxmlElement("w:gridCol")
+            gc.set(qn("w:w"), str(w))
+            tblGrid.append(gc)
+        idx = list(_tbl).index(tblPr)
+        _tbl.insert(idx + 1, tblGrid)
+
+        for cell, width in zip(tbl_hdr.rows[0].cells, (8220, 1134)):
+            tc   = cell._tc
+            tcPr = tc.find(qn("w:tcPr"))
+            if tcPr is None:
+                tcPr = OxmlElement("w:tcPr")
+                tc.insert(0, tcPr)
+            tcW = OxmlElement("w:tcW")
+            tcW.set(qn("w:w"),    str(width))
+            tcW.set(qn("w:type"), "dxa")
+            tcPr.insert(0, tcW)
+
+        # Left cell: title paragraph + subtitle paragraph
+        p_title = tbl_hdr.cell(0, 0).paragraphs[0]
+        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_title.paragraph_format.space_before = Pt(0)
+        p_title.paragraph_format.space_after  = Pt(0)
+        _hdr_run(p_title, title)
+
+        p_sub = tbl_hdr.cell(0, 0).add_paragraph()
+        p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_sub.paragraph_format.space_before = Pt(0)
+        p_sub.paragraph_format.space_after  = Pt(0)
+        _hdr_run(p_sub, subtitle)
+
+        # Right cell: logo right-aligned
+        p_logo = tbl_hdr.cell(0, 1).paragraphs[0]
+        p_logo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_logo.paragraph_format.space_before = Pt(0)
+        p_logo.paragraph_format.space_after  = Pt(0)
+        p_logo.add_run().add_picture(LOGO_PATH, height=Cm(1.5))
+    else:
+        # No logo: simple centered paragraphs
+        for text in (title, subtitle):
+            p = header.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(0)
+            _hdr_run(p, text)
 
 
 def _add_metadata_line(doc: Document, label: str, value: str):

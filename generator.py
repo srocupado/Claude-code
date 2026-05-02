@@ -51,11 +51,11 @@ _TOOL = {
         "properties": {
             "titulo": {
                 "type": "string",
-                "description": "NOTA TÉCNICA MP nº X/AAAA – [assunto em até 10 palavras]",
+                "description": "Medida Provisória nº X/AAAA – [assunto em até 10 palavras]",
             },
             "subtitulo": {
                 "type": "string",
-                "description": "Sempre: 'Análise de Impacto da Medida Provisória'",
+                "description": "Sempre: 'Nota Informativa'",
             },
             "resumo": {
                 "type": "string",
