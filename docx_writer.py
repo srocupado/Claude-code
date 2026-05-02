@@ -2,6 +2,15 @@ import os
 import logging
 from datetime import date, timedelta
 
+_MONTHS_PT = {
+    1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
+    5: "maio", 6: "junho", 7: "julho", 8: "agosto",
+    9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro",
+}
+
+def _date_pt(d: date) -> str:
+    return f"{d.day} de {_MONTHS_PT[d.month]} de {d.year}"
+
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -289,20 +298,15 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     _add_subtitle(doc, subtitle)
     _add_divider(doc)
 
-    # ── Metadata ──────────────────────────────────────────────────────────────
-    _add_metadata_line(doc, "Expedidor:", "Poder Executivo – Presidência da República")
-    _add_metadata_line(doc, "Publicação no DOU (Edição Extra):", pub_date.strftime("%d/%m/%Y"))
-    _add_metadata_line(doc, "Vigência imediata (art. 62, §3º, CF):", pub_date.strftime("%d/%m/%Y"))
-    _add_metadata_line(doc, "Prazo de vigência – 1ª prorrogação (60 dias):", prazo_60.strftime("%d/%m/%Y"))
-    _add_metadata_line(doc, "Prazo máximo de vigência – 2ª prorrogação (120 dias):", prazo_120.strftime("%d/%m/%Y"))
-    _add_metadata_line(doc, "Tramitação:", "Comissão Mista → Câmara dos Deputados → Senado Federal")
-    _add_metadata_line(doc, "Relator na comissão mista:", "a designar")
-    _add_metadata_line(doc, "Data de atualização:", date.today().strftime("%d/%m/%Y"))
-    if mp.get("url_planalto"):
-        _add_metadata_line(doc, "Texto no Planalto:", mp["url_planalto"])
+    # ── Identification line ───────────────────────────────────────────────────
+    ident = (
+        f"A Edição do Diário Oficial da União de {_date_pt(pub_date)} publicou a "
+        f"Medida Provisória nº {mp['numero']}/{mp['ano']}, que {mp.get('ementa', '')}."
+    )
+    _add_body_text(doc, ident)
+    _add_divider(doc)
 
     # ── Content: resumo + alterações ─────────────────────────────────────────
-    _blank(doc)
     if content.get("resumo"):
         _add_body_text(doc, content["resumo"])
     if content.get("alteracoes"):

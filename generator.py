@@ -24,9 +24,9 @@ REGRAS DE ESCRITA:
 - Tom técnico-legislativo, objetivo — sem opiniões pessoais.
 - Leis pelo número e data: "Lei nº 11.977, de 7 de julho de 2009".
 - Dispositivos pelo número completo: "art. 5º, § 1º-A, inciso II".
-- Nomeie ministros e autoridades quando disponíveis no texto.
 - Use travessões (—) para explicações incidentais.
 - Cite MPs correlatas pelo número e ano quando aplicável.
+- NÃO mencione quem assinou ou referendou a MP (Presidente da República, ministros signatários).
 
 RESUMO (primeiro campo):
 Um único parágrafo apresentando a MP: o que ela faz, qual lei altera ou regime cria, e qual o \
