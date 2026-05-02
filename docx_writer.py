@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from datetime import date, timedelta
 
@@ -306,12 +307,12 @@ def _add_objetivos_box(doc: Document):
 
 def _add_title(doc: Document, text: str):
     para = _new_para(doc, WD_ALIGN_PARAGRAPH.CENTER)
-    _styled_run(para, text, bold=True, size=14, font_name="Source Sans Pro")
+    _styled_run(para, text, bold=True, size=12)
 
 
 def _add_subtitle(doc: Document, text: str):
     para = _new_para(doc, WD_ALIGN_PARAGRAPH.CENTER)
-    _styled_run(para, text, bold=True, size=14, font_name="Source Sans Pro")
+    _styled_run(para, text, bold=True, size=12)
 
 
 def _add_metadata_line(doc: Document, label: str, value: str):
@@ -385,14 +386,17 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     # ── Identification line ───────────────────────────────────────────────────
     para_ident = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
     prefix_text = (
-        f"A Edição do Diário Oficial da União de {_date_pt(pub_date)} publicou a "
-        f"Medida Provisória nº {mp['numero']}/{mp['ano']}, que "
+        f”A Edição do Diário Oficial da União de {_date_pt(pub_date)} publicou a “
+        f”Medida Provisória nº {mp['numero']}/{mp['ano']}, que “
     )
     r_prefix = para_ident.add_run(prefix_text)
     r_prefix.font.size      = Pt(12)
     r_prefix.font.color.rgb = COLOR_TEXT
 
-    ementa_text = f"“{mp.get('ementa', '')}”"
+    raw_ementa = mp.get(“ementa”, “”)
+    clean = re.sub(r”<[^>]+>”, “ “, raw_ementa)   # strip any HTML tags
+    clean = re.sub(r”\s+”, “ “, clean).strip()
+    ementa_text = f””{clean}””
     r_ementa = para_ident.add_run(ementa_text)
     r_ementa.italic         = True
     r_ementa.font.size      = Pt(12)

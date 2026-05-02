@@ -81,13 +81,19 @@ def _fetch_mp_page(url: str, session: requests.Session | None = None) -> tuple[s
             tag.decompose()
         text = soup.get_text("\n", strip=True)
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        ementa_lines = []
-        for ln in lines[:20]:
-            if re.match(r"(MEDIDA PROVISÓRIA|A PRESIDENTA|O PRESIDENTE)", ln, re.I):
-                break
-            if len(ln) > 30:
-                ementa_lines.append(ln)
-        ementa = " ".join(ementa_lines[:3]) if ementa_lines else lines[0] if lines else ""
+        # Ementa appears on the first substantive line AFTER the MP title heading
+        ementa = ""
+        found_title = False
+        for ln in lines[:40]:
+            if re.match(r"MEDIDA PROVIS[ÓO]RIA\s+N", ln, re.I):
+                found_title = True
+                continue
+            if found_title and len(ln) > 20:
+                if not re.match(r"(A PRESIDENTA|O PRESIDENTE|O VICE)", ln, re.I):
+                    ementa = ln
+                    break
+        if not ementa:
+            ementa = lines[0] if lines else ""
         return ementa, "\n".join(lines[:500])
     except Exception as exc:
         logger.warning("Erro ao buscar página da MP (%s): %s", url, exc)
@@ -285,7 +291,23 @@ def _build_mp_dict(numero: str, year: int, period: str, text_excerpt: str, targe
         f"{PLANALTO_BASE}/ccivil_03/_Ato{period}/{year}/Mpv/"
         f"mpv{numero}-{ano2d}.htm"
     )
-    ementa = text_excerpt[:300].strip()
+    # Strip HTML tags that may appear in DOU XML text content
+    stripped = re.sub(r"<[^>]+>", " ", text_excerpt)
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    # Ementa appears after the MP title heading — find it heuristically
+    ementa = ""
+    found_title = False
+    for ln in stripped.replace(". ", ".\n").splitlines():
+        ln = ln.strip()
+        if re.match(r"MEDIDA PROVIS[ÓO]RIA\s+N", ln, re.I):
+            found_title = True
+            continue
+        if found_title and len(ln) > 20:
+            if not re.match(r"(A PRESIDENTA|O PRESIDENTE|O VICE)", ln, re.I):
+                ementa = ln[:300]
+                break
+    if not ementa:
+        ementa = stripped[:300]
     _, texto_planalto = _fetch_mp_page(planalto_url)
     return {
         "numero": numero,
