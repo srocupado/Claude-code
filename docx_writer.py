@@ -394,7 +394,6 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     title    = content.get("titulo",    "NOTA TÉCNICA MP nº " + str(mp['numero']) + "/" + str(mp['ano']))
     subtitle = content.get("subtitulo", "Análise de Impacto da Medida Provisória")
     _set_header(doc, title, subtitle)
-    _add_divider(doc)
 
     # ── Identification line ───────────────────────────────────────────────────
     para_ident = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
@@ -407,8 +406,12 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     r_prefix.font.color.rgb = COLOR_TEXT
 
     raw_ementa = mp.get("ementa", "")
-    clean = re.sub(r"<[^>]+>", " ", raw_ementa)   # strip any HTML tags
+    clean = re.sub(r"<[^>]+>", " ", raw_ementa)
     clean = re.sub(r"\s+", " ", clean).strip()
+    # Truncate if the MP title reappears inside the ementa (Planalto page artefact)
+    title_repeat = re.search(r"MEDIDA PROVIS[\xd3O]RIA\s+N", clean, re.IGNORECASE)
+    if title_repeat:
+        clean = clean[:title_repeat.start()].strip().rstrip(".,;")
     ementa_text = "\u201c" + clean + "\u201d"
     r_ementa = para_ident.add_run(ementa_text)
     r_ementa.italic         = True
