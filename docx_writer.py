@@ -414,7 +414,7 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
         clean = clean[:title_repeat.start()].strip().rstrip(".,;")
     if not clean.endswith("."):
         clean = clean + "."
-    ementa_text = "\u201c" + clean
+    ementa_text = "\u201c" + clean + "\u201d"
     r_ementa = para_ident.add_run(ementa_text)
     r_ementa.italic         = True
     r_ementa.font.size      = Pt(12)
