@@ -1,6 +1,8 @@
 name: Monitor de Medidas Provisórias
 
 on:
+  schedule:
+    - cron: '0 22 * * *'  # 19h BRT (UTC-3)
   workflow_dispatch:
     # Permite executar manualmente pela aba Actions do GitHub
     inputs:
