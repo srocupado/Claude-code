@@ -27,6 +27,9 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Instalar LibreOffice
+        run: sudo apt-get install -y libreoffice --no-install-recommends
+
       - name: Instalar dependências
         run: pip install -r requirements.txt
 
@@ -51,7 +54,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: notas-tecnicas-${{ github.run_id }}
-          path: output/*.docx
+          path: |
+            output/*.docx
+            output/*.pdf
           if-no-files-found: ignore
           retention-days: 30
 
