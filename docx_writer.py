@@ -165,18 +165,8 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
         row = table.rows[row_idx]
         tr  = row._tr
 
-        # Exact row height: 571 dxa
-        trPr = tr.find(qn("w:trPr"))
-        if trPr is None:
-            trPr = OxmlElement("w:trPr")
-            tr.insert(0, trPr)
-        trH = OxmlElement("w:trHeight")
-        trH.set(qn("w:hRule"), "exact")
-        trH.set(qn("w:val"),   "571")
-        trPr.append(trH)
-
         # Cell widths
-        for cell, width in zip(row.cells, (1956, 3125)):
+        for cell, width in zip(row.cells, (1356, 3725)):
             tc   = cell._tc
             tcPr = tc.find(qn("w:tcPr"))
             if tcPr is None:
@@ -303,10 +293,9 @@ def _add_objetivos_box(doc: Document):
 
 # ── Document-level builders ──────────────────────────────────────────────────
 
-def _set_header(doc: Document, title: str, subtitle: str):
-    """Put title + subtitle in the Word page header (repeats on every page)."""
+def _set_header(doc: Document, title: str, ementa: str, subtitle: str):
+    """Page header: blank line → [title | logo] → ementa → subtitle."""
     header = doc.sections[0].header
-    # Drop all existing paragraphs and tables from the header body, then rebuild
     hdr_body = header._element
     for child in list(hdr_body):
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
@@ -320,6 +309,13 @@ def _set_header(doc: Document, title: str, subtitle: str):
         r.font.name      = "Calibri"
         r.font.color.rgb = COLOR_TEXT
 
+    def _hdr_para(text: str) -> None:
+        p = header.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+        _hdr_run(p, text)
+
     # Blank line at the very top of the header
     p_blank = header.add_paragraph()
     p_blank.paragraph_format.space_before = Pt(0)
@@ -328,7 +324,7 @@ def _set_header(doc: Document, title: str, subtitle: str):
     has_logo = os.path.exists(LOGO_PATH)
 
     if has_logo:
-        # Table: [title + subtitle centered | logo right-aligned]
+        # Row 1 of header: title centered (left cell) | logo right (right cell)
         tbl_hdr = header.add_table(rows=1, cols=2, width=Cm(16.5))
         _tbl = tbl_hdr._tbl
 
@@ -337,7 +333,6 @@ def _set_header(doc: Document, title: str, subtitle: str):
             tblPr = OxmlElement("w:tblPr")
             _tbl.insert(0, tblPr)
 
-        # No borders
         tblBorders = OxmlElement("w:tblBorders")
         for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
             b = OxmlElement(f"w:{side}")
@@ -353,7 +348,6 @@ def _set_header(doc: Document, title: str, subtitle: str):
         tblW.set(qn("w:type"), "auto")
         tblPr.append(tblW)
 
-        # Column grid: text col 8220 dxa, logo col 1134 dxa (≈2 cm)
         tblGrid = OxmlElement("w:tblGrid")
         for w in (8220, 1134):
             gc = OxmlElement("w:gridCol")
@@ -373,33 +367,25 @@ def _set_header(doc: Document, title: str, subtitle: str):
             tcW.set(qn("w:type"), "dxa")
             tcPr.insert(0, tcW)
 
-        # Left cell: title paragraph + subtitle paragraph
+        # Left cell: title only
         p_title = tbl_hdr.cell(0, 0).paragraphs[0]
         p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p_title.paragraph_format.space_before = Pt(0)
         p_title.paragraph_format.space_after  = Pt(0)
         _hdr_run(p_title, title)
 
-        p_sub = tbl_hdr.cell(0, 0).add_paragraph()
-        p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_sub.paragraph_format.space_before = Pt(0)
-        p_sub.paragraph_format.space_after  = Pt(0)
-        _hdr_run(p_sub, subtitle)
-
-        # Right cell: logo right-aligned
+        # Right cell: logo
         p_logo = tbl_hdr.cell(0, 1).paragraphs[0]
         p_logo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p_logo.paragraph_format.space_before = Pt(0)
         p_logo.paragraph_format.space_after  = Pt(0)
         p_logo.add_run().add_picture(LOGO_PATH, height=Cm(1.5))
     else:
-        # No logo: simple centered paragraphs
-        for text in (title, subtitle):
-            p = header.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.paragraph_format.space_before = Pt(0)
-            p.paragraph_format.space_after  = Pt(0)
-            _hdr_run(p, text)
+        _hdr_para(title)
+
+    # Ementa and subtitle span full width below the title/logo row
+    _hdr_para(ementa)
+    _hdr_para(subtitle)
 
 
 def _add_metadata_line(doc: Document, label: str, value: str):
@@ -455,48 +441,27 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     _set_margins(doc)
     _set_default_font(doc)
 
-    # ── Prazos table — 4 blank lines below the page header ───────────────────
-    for _ in range(4):
-        _blank(doc)
+    # ── Ementa (used in page header) ─────────────────────────────────────────
+    raw_ementa = mp.get("ementa", "")
+    ementa_clean = re.sub(r"<[^>]+>", " ", raw_ementa)
+    ementa_clean = re.sub(r"\s+", " ", ementa_clean).strip()
+    title_repeat = re.search(r"MEDIDA PROVIS[\xd3O]RIA\s+N", ementa_clean, re.IGNORECASE)
+    if title_repeat:
+        ementa_clean = ementa_clean[:title_repeat.start()].strip().rstrip(".,;")
+    if not ementa_clean.endswith("."):
+        ementa_clean = ementa_clean + "."
+    ementa_hdr = "(" + ementa_clean + ")"
+
+    # \u2500\u2500 Page header: blank \u2192 title+logo \u2192 ementa \u2192 subtitle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    title    = content.get("titulo", "Medida Provis\u00f3ria n\u00ba " + str(mp['numero']) + ", de " + str(mp['ano']))
+    subtitle = "Nota Informativa"
+    _set_header(doc, title, ementa_hdr, subtitle)
+
+    # \u2500\u2500 Prazos table \u2014 1 blank line below the page header \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    _blank(doc)
     emendas_end = _add_prazos_table(doc, pub_date)
     _blank(doc)
     _add_atencao_box(doc, emendas_end)
-    _blank(doc)
-
-    # ── Title & subtitle → Word page header ──────────────────────────────────
-    title    = content.get("titulo",    "NOTA TÉCNICA MP nº " + str(mp['numero']) + "/" + str(mp['ano']))
-    subtitle = content.get("subtitulo", "Nota Informativa")
-    _set_header(doc, title, subtitle)
-
-    # ── Identification line ───────────────────────────────────────────────────
-    para_ident = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    para_ident.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
-    prefix_text = (
-        "A Edição do Diário Oficial da União de " + _date_pt(pub_date) +
-        " publicou a Medida Provisória nº " + str(mp['numero']) + "/" + str(mp['ano']) + ", que "
-    )
-    r_prefix = para_ident.add_run(prefix_text)
-    r_prefix.font.size      = Pt(11)
-    r_prefix.font.name      = "Arial"
-    r_prefix.font.color.rgb = COLOR_TEXT
-
-    raw_ementa = mp.get("ementa", "")
-    clean = re.sub(r"<[^>]+>", " ", raw_ementa)
-    clean = re.sub(r"\s+", " ", clean).strip()
-    # Truncate if the MP title reappears inside the ementa (Planalto page artefact)
-    title_repeat = re.search(r"MEDIDA PROVIS[\xd3O]RIA\s+N", clean, re.IGNORECASE)
-    if title_repeat:
-        clean = clean[:title_repeat.start()].strip().rstrip(".,;")
-    if not clean.endswith("."):
-        clean = clean + "."
-    ementa_text = "\u201c" + clean + "\u201d"
-    r_ementa = para_ident.add_run(ementa_text)
-    r_ementa.italic         = True
-    r_ementa.font.size      = Pt(11)
-    r_ementa.font.name      = "Arial"
-    r_ementa.font.color.rgb = COLOR_TEXT
-
-
     _blank(doc)
     _add_objetivos_box(doc)
     _blank(doc)
