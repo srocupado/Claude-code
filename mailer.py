@@ -39,7 +39,7 @@ def _build_body(mp_list: list[dict]) -> str:
         "A(s) nota(s) técnica(s) gerada(s) automaticamente está(ão) em anexo.",
         "",
         "--",
-        "Monitor de Medidas Provisórias – gerado por Claude AI",
+        "Monitor de Medidas Provisórias",
     ]
     return "\n".join(lines)
 
@@ -48,7 +48,7 @@ def _build_empty_body(target_date: date) -> str:
     return (
         f"Não foram identificadas Medidas Provisórias publicadas em "
         f"{target_date.strftime('%d/%m/%Y')}.\n\n"
-        "--\nMonitor de Medidas Provisórias – gerado por Claude AI"
+        "--\nMonitor de Medidas Provisórias"
     )
 
 
