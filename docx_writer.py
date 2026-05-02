@@ -329,7 +329,7 @@ def _set_header(doc: Document, title: str, subtitle: str):
 
     if has_logo:
         # Table: [title + subtitle centered | logo right-aligned]
-        tbl_hdr = header.add_table(rows=1, cols=2)
+        tbl_hdr = header.add_table(rows=1, cols=2, width=Cm(16.5))
         _tbl = tbl_hdr._tbl
 
         tblPr = _tbl.find(qn("w:tblPr"))
