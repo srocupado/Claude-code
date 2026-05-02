@@ -305,14 +305,28 @@ def _add_objetivos_box(doc: Document):
 
 # ── Document-level builders ──────────────────────────────────────────────────
 
-def _add_title(doc: Document, text: str):
-    para = _new_para(doc, WD_ALIGN_PARAGRAPH.CENTER)
-    _styled_run(para, text, bold=True, size=12)
+def _set_header(doc: Document, title: str, subtitle: str):
+    """Put title + subtitle in the Word page header (repeats on every page)."""
+    header = doc.sections[0].header
+    # Drop all existing paragraphs from the header body, then rebuild
+    hdr_body = header._element
+    for child in list(hdr_body):
+        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        if tag == "p":
+            hdr_body.remove(child)
 
+    def _hdr_para(text: str) -> None:
+        p = header.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+        r = p.add_run(text)
+        r.bold           = True
+        r.font.size      = Pt(12)
+        r.font.color.rgb = COLOR_TEXT
 
-def _add_subtitle(doc: Document, text: str):
-    para = _new_para(doc, WD_ALIGN_PARAGRAPH.CENTER)
-    _styled_run(para, text, bold=True, size=12)
+    _hdr_para(title)
+    _hdr_para(subtitle)
 
 
 def _add_metadata_line(doc: Document, label: str, value: str):
@@ -376,11 +390,10 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     _add_atencao_box(doc, emendas_end)
     _blank(doc)
 
-    # ── Title & subtitle ──────────────────────────────────────────────────────
-    title    = content.get("titulo",    f"NOTA TÉCNICA MP nº {mp['numero']}/{mp['ano']}")
+    # ── Title & subtitle → Word page header ──────────────────────────────────
+    title    = content.get("titulo",    "NOTA TÉCNICA MP nº " + str(mp['numero']) + "/" + str(mp['ano']))
     subtitle = content.get("subtitulo", "Análise de Impacto da Medida Provisória")
-    _add_title(doc, title)
-    _add_subtitle(doc, subtitle)
+    _set_header(doc, title, subtitle)
     _add_divider(doc)
 
     # ── Identification line ───────────────────────────────────────────────────

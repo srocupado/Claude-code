@@ -291,24 +291,22 @@ def _build_mp_dict(numero: str, year: int, period: str, text_excerpt: str, targe
         f"{PLANALTO_BASE}/ccivil_03/_Ato{period}/{year}/Mpv/"
         f"mpv{numero}-{ano2d}.htm"
     )
-    # Strip HTML tags that may appear in DOU XML text content
-    stripped = re.sub(r"<[^>]+>", " ", text_excerpt)
-    stripped = re.sub(r"\s+", " ", stripped).strip()
-    # Ementa appears after the MP title heading — find it heuristically
-    ementa = ""
-    found_title = False
-    for ln in stripped.replace(". ", ".\n").splitlines():
-        ln = ln.strip()
-        if re.match(r"MEDIDA PROVIS[ÓO]RIA\s+N", ln, re.I):
-            found_title = True
-            continue
-        if found_title and len(ln) > 20:
-            if not re.match(r"(A PRESIDENTA|O PRESIDENTE|O VICE)", ln, re.I):
-                ementa = ln[:300]
-                break
-    if not ementa:
-        ementa = stripped[:300]
-    _, texto_planalto = _fetch_mp_page(planalto_url)
+    # Prefer ementa extracted directly from the Planalto HTML page (clean text)
+    ementa_from_page, texto_planalto = _fetch_mp_page(planalto_url)
+    if ementa_from_page:
+        ementa = ementa_from_page
+    else:
+        # Fallback: extract from DOU XML text by regex
+        # Pattern: capture text between the title date (ends with a year) and the
+        # presidential preamble ("O PRESIDENTE"/"A PRESIDENTA").
+        stripped = re.sub(r"<[^>]+>", " ", text_excerpt)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        m = re.search(
+            r"DE\s+\d{4}\s+(.+?)(?=\s+O\s+PRESIDENTE|\s+A\s+PRESIDENTA|\s+O\s+VICE)",
+            stripped,
+            re.IGNORECASE | re.DOTALL,
+        )
+        ementa = re.sub(r"\s+", " ", m.group(1)).strip()[:300] if m else stripped[:300]
     return {
         "numero": numero,
         "ano": year,
