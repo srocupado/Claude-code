@@ -412,15 +412,14 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     title_repeat = re.search(r"MEDIDA PROVIS[\xd3O]RIA\s+N", clean, re.IGNORECASE)
     if title_repeat:
         clean = clean[:title_repeat.start()].strip().rstrip(".,;")
-    ementa_text = "\u201c" + clean + "\u201d"
+    if not clean.endswith("."):
+        clean = clean + "."
+    ementa_text = "\u201c" + clean
     r_ementa = para_ident.add_run(ementa_text)
     r_ementa.italic         = True
     r_ementa.font.size      = Pt(12)
     r_ementa.font.color.rgb = COLOR_TEXT
 
-    r_period = para_ident.add_run(".")
-    r_period.font.size      = Pt(12)
-    r_period.font.color.rgb = COLOR_TEXT
 
     _blank(doc)
     _add_objetivos_box(doc)
