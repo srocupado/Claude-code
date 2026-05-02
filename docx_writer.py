@@ -14,7 +14,7 @@ def _date_pt(d: date) -> str:
 
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -39,10 +39,9 @@ def _set_margins(doc: Document, top=2.0, bottom=2.0, left=3.0, right=1.5):
 
 
 def _set_default_font(doc: Document):
-    """Template base style: Times New Roman 10 pt, no explicit color."""
     style = doc.styles["Normal"]
-    style.font.name = "Times New Roman"
-    style.font.size = Pt(10)
+    style.font.name = "Arial"
+    style.font.size = Pt(11)
 
 
 # ── Low-level helpers ────────────────────────────────────────────────────────
@@ -56,7 +55,7 @@ def _new_para(doc: Document, align=WD_ALIGN_PARAGRAPH.JUSTIFY):
     return para
 
 
-def _styled_run(para, text: str, *, bold=False, size=12, font_name: str | None = None):
+def _styled_run(para, text: str, *, bold=False, size=11, font_name: str | None = "Arial"):
     """Add a run with explicit color and optional bold/font/size."""
     r = para.add_run(text)
     r.bold           = bold
@@ -193,6 +192,7 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
         p0.paragraph_format.space_after = Pt(0)
         rl = p0.add_run(label)
         rl.font.name      = "Arial"
+        rl.font.size      = Pt(11)
         rl.font.color.rgb = COLOR_BLACK
 
         # Value cell (col 1)
@@ -201,6 +201,7 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
         p1.paragraph_format.space_after = Pt(0)
         rv = p1.add_run(value)
         rv.font.name      = "Arial"
+        rv.font.size      = Pt(11)
         rv.bold           = bold_val
         rv.font.color.rgb = val_color
 
@@ -323,31 +324,31 @@ def _set_header(doc: Document, title: str, subtitle: str):
         r = p.add_run(text)
         r.bold           = True
         r.font.size      = Pt(12)
+        r.font.name      = "Calibri"
         r.font.color.rgb = COLOR_TEXT
 
     _hdr_para(title)
+    _hdr_para("")
     _hdr_para(subtitle)
 
 
 def _add_metadata_line(doc: Document, label: str, value: str):
     para = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    _styled_run(para, label + " ", bold=True,  size=12)
-    _styled_run(para, value,        bold=False, size=12)
+    _styled_run(para, label + " ", bold=True)
+    _styled_run(para, value,        bold=False)
 
 
 def _add_section_heading(doc: Document, text: str):
-    """Blank line → bold heading → blank line."""
     _blank(doc)
     para = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    _styled_run(para, text, bold=True, size=12)
+    _styled_run(para, text, bold=True)
     _blank(doc)
 
 
 def _add_labeled_block(doc: Document, label: str, body: str):
-    """Blank → bold label → blank → body paragraphs."""
     _blank(doc)
     para = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    _styled_run(para, label, bold=True, size=12)
+    _styled_run(para, label, bold=True)
     _blank(doc)
     _add_body_text(doc, body)
 
@@ -362,9 +363,11 @@ def _add_body_text(doc: Document, text: str, indent: bool = False):
         para = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
         if indent:
             para.paragraph_format.first_line_indent = Cm(1.25)
+        para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
         for j, line in enumerate(lines):
             r = para.add_run(line)
-            r.font.size      = Pt(12)
+            r.font.size      = Pt(11)
+            r.font.name      = "Arial"
             r.font.color.rgb = COLOR_TEXT
             if j < len(lines) - 1:
                 r.add_break()
@@ -382,9 +385,9 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     _set_margins(doc)
     _set_default_font(doc)
 
-    # ── Prazos table (first element — before title) ───────────────────────────
-    # python-docx Document() has no default paragraph, just sectPr.
-    # add_table() inserts before sectPr → table ends up at body[0]. ✓
+    # ── Prazos table — 4 blank lines below the page header ───────────────────
+    for _ in range(4):
+        _blank(doc)
     emendas_end = _add_prazos_table(doc, pub_date)
     _blank(doc)
     _add_atencao_box(doc, emendas_end)
@@ -392,17 +395,19 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
 
     # ── Title & subtitle → Word page header ──────────────────────────────────
     title    = content.get("titulo",    "NOTA TÉCNICA MP nº " + str(mp['numero']) + "/" + str(mp['ano']))
-    subtitle = content.get("subtitulo", "Análise de Impacto da Medida Provisória")
+    subtitle = content.get("subtitulo", "Nota Informativa")
     _set_header(doc, title, subtitle)
 
     # ── Identification line ───────────────────────────────────────────────────
     para_ident = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+    para_ident.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
     prefix_text = (
         "A Edição do Diário Oficial da União de " + _date_pt(pub_date) +
         " publicou a Medida Provisória nº " + str(mp['numero']) + "/" + str(mp['ano']) + ", que "
     )
     r_prefix = para_ident.add_run(prefix_text)
-    r_prefix.font.size      = Pt(12)
+    r_prefix.font.size      = Pt(11)
+    r_prefix.font.name      = "Arial"
     r_prefix.font.color.rgb = COLOR_TEXT
 
     raw_ementa = mp.get("ementa", "")
@@ -417,7 +422,8 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     ementa_text = "\u201c" + clean + "\u201d"
     r_ementa = para_ident.add_run(ementa_text)
     r_ementa.italic         = True
-    r_ementa.font.size      = Pt(12)
+    r_ementa.font.size      = Pt(11)
+    r_ementa.font.name      = "Arial"
     r_ementa.font.color.rgb = COLOR_TEXT
 
 
@@ -435,14 +441,11 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     _blank(doc)
     _add_divider(doc)
     _blank(doc)
-    _add_metadata_line(
-        doc,
-        "Vigência:",
-        "A Medida Provisória entra em vigor na data de sua publicação.",
-    )
+    vigencia = _new_para(doc, WD_ALIGN_PARAGRAPH.CENTER)
+    _styled_run(vigencia, "VIGÊNCIA: A Medida Provisória entra em vigor na data de sua publicação.", bold=True)
     _blank(doc)
-    sig = _new_para(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    _styled_run(sig, "Assessoria da Liderança do Podemos", bold=True, size=12)
+    sig = _new_para(doc, WD_ALIGN_PARAGRAPH.CENTER)
+    _styled_run(sig, "Assessoria da Liderança do Podemos", bold=True)
 
     # ── Save ──────────────────────────────────────────────────────────────────
     # ASCII-only filename: special chars (É, º) break GitHub Actions artifact ZIP
