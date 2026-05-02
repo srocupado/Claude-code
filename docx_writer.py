@@ -10,7 +10,8 @@ from docx.oxml import OxmlElement
 
 logger = logging.getLogger(__name__)
 
-OUTPUT_DIR = "output"
+OUTPUT_DIR   = "output"
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.docx")
 
 COLOR_TEXT  = RGBColor(0x33, 0x33, 0x33)   # #333333 — template color
 COLOR_RED   = RGBColor(0xFF, 0x00, 0x00)   # emendas deadline
@@ -269,7 +270,8 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     prazo_60  = pub_date + timedelta(days=60)
     prazo_120 = pub_date + timedelta(days=120)
 
-    doc = Document()
+    # Open template as base — inherits all styles, fonts and theme
+    doc = Document(TEMPLATE_PATH) if os.path.exists(TEMPLATE_PATH) else Document()
     _set_margins(doc)
     _set_default_font(doc)
 
