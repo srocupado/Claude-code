@@ -109,12 +109,12 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
         tbl.insert(0, tblPr)
 
     tblW = OxmlElement("w:tblW")
-    tblW.set(qn("w:w"), "5081")
+    tblW.set(qn("w:w"), "5500")
     tblW.set(qn("w:type"), "dxa")
     tblPr.append(tblW)
 
     tblInd = OxmlElement("w:tblInd")
-    tblInd.set(qn("w:w"), "3856")   # ≈ 6.8 cm indent → table on right side
+    tblInd.set(qn("w:w"), "3854")   # indent so table aligns to right margin
     tblInd.set(qn("w:type"), "dxa")
     tblPr.append(tblInd)
 
@@ -134,7 +134,7 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
 
     # ── Column grid (widths) ──────────────────────────────────────────────────
     tblGrid = OxmlElement("w:tblGrid")
-    for w in (1356, 3725):
+    for w in (1100, 4400):
         gc = OxmlElement("w:gridCol")
         gc.set(qn("w:w"), str(w))
         tblGrid.append(gc)
