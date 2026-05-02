@@ -386,17 +386,17 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     # ── Identification line ───────────────────────────────────────────────────
     para_ident = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
     prefix_text = (
-        f”A Edição do Diário Oficial da União de {_date_pt(pub_date)} publicou a “
-        f”Medida Provisória nº {mp['numero']}/{mp['ano']}, que “
+        "A Edição do Diário Oficial da União de " + _date_pt(pub_date) +
+        " publicou a Medida Provisória nº " + str(mp['numero']) + "/" + str(mp['ano']) + ", que "
     )
     r_prefix = para_ident.add_run(prefix_text)
     r_prefix.font.size      = Pt(12)
     r_prefix.font.color.rgb = COLOR_TEXT
 
-    raw_ementa = mp.get(“ementa”, “”)
-    clean = re.sub(r”<[^>]+>”, “ “, raw_ementa)   # strip any HTML tags
-    clean = re.sub(r”\s+”, “ “, clean).strip()
-    ementa_text = f””{clean}””
+    raw_ementa = mp.get("ementa", "")
+    clean = re.sub(r"<[^>]+>", " ", raw_ementa)   # strip any HTML tags
+    clean = re.sub(r"\s+", " ", clean).strip()
+    ementa_text = "\u201c" + clean + "\u201d"
     r_ementa = para_ident.add_run(ementa_text)
     r_ementa.italic         = True
     r_ementa.font.size      = Pt(12)
