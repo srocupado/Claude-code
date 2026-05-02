@@ -77,10 +77,10 @@ formato JSON (sem markdown, sem texto fora do JSON):
 }
 
 REGRAS OBRIGATÓRIAS:
-- O JSON deve conter EXATAMENTE as 13 chaves acima — não adicione nem remova chaves.
+- O JSON deve conter EXATAMENTE as 18 chaves acima — não adicione nem remova chaves.
 - Os valores de "secao_1_titulo" a "secao_6_titulo" devem ser COPIADOS LITERALMENTE do esquema acima, sem qualquer alteração.
 - Cada campo secao_X_conteudo deve ter no mínimo 2 parágrafos densos (separados por \\n\\n).
-- NÃO use cabeçalhos livres como "CONTEXTO", "OBJETIVOS", "VIGÊNCIA" dentro dos valores — todo conteúdo vai nas 13 chaves definidas.
+- NÃO use cabeçalhos livres como "CONTEXTO", "OBJETIVOS", "VIGÊNCIA" dentro dos valores — todo conteúdo vai nas 18 chaves definidas.
 - O campo "recomendacao" termina com a recomendação ao parlamentar — não inclua assinatura nem nome de órgão.
 - Responda APENAS com o JSON válido, sem nenhum texto antes ou depois, sem markdown, sem blocos de código.
 """
@@ -93,18 +93,21 @@ def generate_nota_tecnica(mp: dict) -> dict:
     prazo_60  = (pub_date + timedelta(days=60)).strftime("%d/%m/%Y")
     prazo_120 = (pub_date + timedelta(days=120)).strftime("%d/%m/%Y")
 
+    texto = mp.get("texto_integral") or "Não disponível"
     user_content = (
         f"Gere a Nota Técnica completa para a seguinte Medida Provisória:\n\n"
         f"Número: MP nº {mp['numero']}/{mp['ano']}\n"
-        f"Data de publicação no DOU (Edição Extra): {pub_date.strftime('%d/%m/%Y')}\n"
-        f"Prazo de vigência – 60 dias (1ª prorrogação): {prazo_60}\n"
-        f"Prazo máximo de vigência – 120 dias (2ª prorrogação): {prazo_120}\n"
+        f"Data de publicação no DOU: {pub_date.strftime('%d/%m/%Y')}\n"
+        f"Prazo de vigência – 1ª prorrogação (60 dias): {prazo_60}\n"
+        f"Prazo máximo de vigência – 2ª prorrogação (120 dias): {prazo_120}\n"
         f"Ementa: {mp['ementa']}\n"
         f"URL no Planalto: {mp.get('url_planalto', 'N/A')}\n\n"
-        f"Texto integral (trecho):\n"
-        f"{mp.get('texto_integral', 'Não disponível')[:6000]}\n\n"
-        "Gere a Nota Técnica no formato JSON especificado no system prompt. "
-        "Use os prazos informados acima nas análises de vigência e no campo recomendacao."
+        f"Texto integral (trecho — use para classificar o tipo A/B/C e embasar a análise):\n"
+        f"{texto[:6000]}\n\n"
+        "INSTRUÇÕES FINAIS:\n"
+        "1. Identifique o tipo da MP (A=crédito extraordinário, B=altera lei, C=cria regime) e aplique a orientação correspondente na secao_1_conteudo.\n"
+        "2. Use os prazos informados acima nas análises de vigência e no campo recomendacao.\n"
+        "3. Retorne APENAS o JSON com as 18 chaves definidas no system prompt, sem nenhum texto adicional."
     )
 
     client = _get_client()
@@ -136,13 +139,29 @@ def generate_nota_tecnica(mp: dict) -> dict:
     raw = re.sub(r"\s*```$", "", raw)
 
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
     except json.JSONDecodeError:
-        # Last-resort: grab the outermost {...}
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if m:
-            return json.loads(m.group())
-        raise ValueError(
-            f"Claude não retornou JSON válido para MP {mp['numero']}. "
-            f"Resposta recebida:\n{raw[:500]}"
-        )
+            result = json.loads(m.group())
+        else:
+            raise ValueError(
+                f"Claude não retornou JSON válido para MP {mp['numero']}. "
+                f"Resposta recebida:\n{raw[:500]}"
+            )
+
+    _REQUIRED_KEYS = {
+        "titulo", "subtitulo", "ementa_expandida",
+        "secao_1_titulo", "secao_1_conteudo",
+        "secao_2_titulo", "secao_2_conteudo",
+        "secao_3_titulo", "secao_3_conteudo",
+        "secao_4_titulo", "secao_4_conteudo",
+        "secao_5_titulo", "secao_5_conteudo",
+        "secao_6_titulo", "secao_6_conteudo",
+        "argumento_favoravel", "argumento_contrario", "recomendacao",
+    }
+    missing = _REQUIRED_KEYS - result.keys()
+    if missing:
+        logger.warning("MP %s: campos ausentes na resposta do Claude: %s", mp["numero"], sorted(missing))
+
+    return result

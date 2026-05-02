@@ -209,7 +209,8 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     sig_run.font.name = "Arial"
 
     # ── Save ──────────────────────────────────────────────────────────────────
-    filename = f"NOTA_TÉCNICA_-_MPV_nº_{mp['numero']}_de_{mp['ano']}.docx"
+    # ASCII-only filename: special chars (É, º) break GitHub Actions artifact ZIP download
+    filename = f"NOTA_TECNICA_-_MPV_n{mp['numero']}_de_{mp['ano']}.docx"
     filepath = os.path.join(output_dir, filename)
     doc.save(filepath)
     logger.info("Nota técnica salva: %s", filepath)
