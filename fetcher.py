@@ -345,6 +345,14 @@ def _fetch_inlabs(target_date: date) -> list[dict]:
                 logger.info("  [Inlabs] %s: arquivo vazio (sem publicação).", section)
                 continue
 
+            # Inlabs returns HTML (not 404) when a section wasn't published
+            if content[:2] != b"PK":
+                logger.info(
+                    "  [Inlabs] %s: resposta não é ZIP (provavelmente seção não publicada). "
+                    "Início: %.120s", section, content[:120]
+                )
+                continue
+
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 xml_names = [n for n in zf.namelist() if n.lower().endswith(".xml")]
                 logger.info("  [Inlabs] %s: %d arquivo(s) XML no ZIP.", section, len(xml_names))

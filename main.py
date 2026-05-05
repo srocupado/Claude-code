@@ -12,7 +12,15 @@ import logging
 import os
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
+
+# Diário Oficial da União é publicado no horário de Brasília (UTC-3)
+BRT = timezone(timedelta(hours=-3))
+
+
+def today_brt() -> date:
+    """Returns the current date in Brasília time (UTC-3)."""
+    return datetime.now(BRT).date()
 
 import schedule
 
@@ -117,9 +125,9 @@ def main():
             "Modo agendado ativado. Execução diária às %s. Pressione Ctrl+C para encerrar.",
             config.SCHEDULE_TIME,
         )
-        schedule.every().day.at(config.SCHEDULE_TIME).do(lambda: run(date.today()))
+        schedule.every().day.at(config.SCHEDULE_TIME).do(lambda: run(today_brt()))
         # Run once immediately on startup
-        run(date.today())
+        run(today_brt())
         while True:
             schedule.run_pending()
             time.sleep(30)
@@ -131,7 +139,7 @@ def main():
                 logger.error("Formato de data inválido. Use YYYY-MM-DD (ex: 2026-05-01)")
                 sys.exit(1)
         else:
-            target = date.today()
+            target = today_brt()
         run(target)
 
 
