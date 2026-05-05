@@ -2,7 +2,9 @@ import os
 import ssl
 import smtplib
 import logging
-from datetime import date
+from datetime import date, timezone, timedelta
+
+BRT = timezone(timedelta(hours=-3))
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -16,8 +18,8 @@ SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 
 
-def _build_body(mp_list: list[dict]) -> str:
-    today = date.today().strftime("%d/%m/%Y")
+def _build_body(mp_list: list[dict], target_date: date) -> str:
+    today = target_date.strftime("%d/%m/%Y")
     count = len(mp_list)
     noun = "Medida Provisória" if count == 1 else "Medidas Provisórias"
     lines = [
@@ -79,8 +81,10 @@ def _send(msg: MIMEMultipart):
     logger.info("E-mail enviado para %s", config.RECIPIENT_EMAIL)
 
 
-def send_email(docx_files: list[str], mp_list: list[dict]):
-    today = date.today().strftime("%d/%m/%Y")
+def send_email(docx_files: list[str], mp_list: list[dict], target_date: date | None = None):
+    if target_date is None:
+        target_date = date.today()
+    today = target_date.strftime("%d/%m/%Y")
     count = len(mp_list)
     subject = (
         f"[MP Monitor] {count} Medida(s) Provisória(s) publicada(s) em {today}"
@@ -91,7 +95,7 @@ def send_email(docx_files: list[str], mp_list: list[dict]):
     msg["To"] = config.RECIPIENT_EMAIL
     msg["Subject"] = subject
 
-    msg.attach(MIMEText(_build_body(mp_list), "plain", "utf-8"))
+    msg.attach(MIMEText(_build_body(mp_list, target_date), "plain", "utf-8"))
 
     for filepath in docx_files:
         _attach_file(msg, filepath)

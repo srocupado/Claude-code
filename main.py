@@ -87,7 +87,7 @@ def run(target_date: date):
 
     logger.info("Enviando %d anexo(s) por e-mail para %s...", len(attachments), config.RECIPIENT_EMAIL)
     try:
-        send_email(attachments, processed_mps)
+        send_email(attachments, processed_mps, target_date)
         logger.info("E-mail enviado com sucesso.")
     except Exception:
         logger.exception("Falha ao enviar e-mail. As notas foram salvas em ./output/")
