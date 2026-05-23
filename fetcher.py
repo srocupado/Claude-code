@@ -204,6 +204,11 @@ def _parse_dou_xml(xml_content: str, target_date: date) -> list[dict]:
     Only matches articles whose TITLE starts with 'MEDIDA PROVISÓRIA Nº' —
     this avoids false positives from portarias/decretos that reference old MPs
     in their body text.
+
+    Note: the date inside the title is the signing date, which may differ from
+    the publication date (e.g. an MP signed on May 16 published in a DO1E on
+    May 19). We do NOT filter by signing date — the ZIP itself was downloaded
+    for the specific publication date, so all articles in it are from that day.
     """
     year = target_date.year
     period = _planalto_period(year)
@@ -216,40 +221,16 @@ def _parse_dou_xml(xml_content: str, target_date: date) -> list[dict]:
         re.IGNORECASE,
     )
 
-    # Extracts the publication date embedded in the title, e.g.:
-    # "MEDIDA PROVISÓRIA Nº 1.353, DE 30 DE ABRIL DE 2026"
-    # Character class includes Ç (MARÇO) and all accented letters in month names
-    DATE_IN_TITLE_RE = re.compile(
-        r",\s*DE\s+(\d{1,2})[º°]?\s+DE\s+([A-ZÁÉÍÓÚÀÂÊÔÃÕÜÇ]+)\s+DE\s+(\d{4})",
-        re.IGNORECASE,
-    )
-
-    MONTHS_UPPER = {v: k for k, v in MONTHS_PT.items()}
-
-    def _date_matches_title(title_upper: str) -> bool:
-        """Returns True if the date inside the title equals target_date."""
-        dm = DATE_IN_TITLE_RE.search(title_upper)
-        if not dm:
-            # No date in title — accept cautiously (rare edge case)
-            return True
-        day, month_name, title_year = int(dm.group(1)), dm.group(2).upper(), int(dm.group(3))
-        month = MONTHS_UPPER.get(month_name)
-        if month is None:
-            return True  # Unrecognised month name — accept
-        return date(title_year, month, day) == target_date
-
     def _try_article(title_text: str, body_text: str) -> None:
         title_upper = title_text.strip().upper()
         m = TITLE_RE.match(title_upper)
         if not m:
             return
-        # Reject old MPs: the date inside the title must match the target date
-        if not _date_matches_title(title_upper):
-            return
         numero = m.group(1).replace(".", "")
         if numero in seen:
             return
         seen.add(numero)
+        logger.info("  [XML] MP nº %s encontrada no título: %.120s", numero, title_text.strip())
         results.append(_build_mp_dict(numero, year, period, body_text or title_text, target_date))
 
     try:
@@ -267,11 +248,11 @@ def _parse_dou_xml(xml_content: str, target_date: date) -> list[dict]:
     # This lets us climb from a title element to the containing article body.
     parent_map: dict = {child: parent for parent in root.iter() for child in parent}
 
-    # Walk all elements; treat short text content as potential MP title
+    # Walk all elements; treat text content as potential MP title
     for elem in root.iter():
         text = (elem.text or "").strip()
-        if not text or len(text) > 300:
-            continue  # Skip empty or long body paragraphs
+        if not text or len(text) > 2000:
+            continue  # Skip empty or excessively long body blocks
         # Use the parent element so body_text includes the full article content
         parent = parent_map.get(elem, elem)
         body_text = ET.tostring(parent, encoding="unicode", method="text")
@@ -282,6 +263,19 @@ def _parse_dou_xml(xml_content: str, target_date: date) -> list[dict]:
         attr_title = elem.get("title", "").strip()
         if attr_title:
             _try_article(attr_title, ET.tostring(elem, encoding="unicode", method="text"))
+
+    # Fallback: scan each raw XML line (tags stripped) for MP title patterns.
+    # Catches cases where the DOU XML nests text in child nodes rather than
+    # elem.text, or uses an unexpected element name that the loops above miss.
+    if not results:
+        logger.info("  [XML] Nenhuma MP via ElementTree — tentando scan por linha.")
+        for raw_line in xml_content.splitlines():
+            line = re.sub(r"<[^>]+>", " ", raw_line).strip()
+            if 20 <= len(line) <= 400:
+                _try_article(line, xml_content)
+        if not results:
+            snippet = xml_content[:800].replace("\n", " ")
+            logger.warning("  [XML] Nenhuma MP encontrada. Início do XML: %.800s", snippet)
 
     return results
 
@@ -351,6 +345,14 @@ def _fetch_inlabs(target_date: date) -> list[dict]:
             content = resp.content
             if len(content) < 100:
                 logger.info("  [Inlabs] %s: arquivo vazio (sem publicação).", section)
+                continue
+
+            # Inlabs returns HTML (not 404) when a section wasn't published
+            if content[:2] != b"PK":
+                logger.info(
+                    "  [Inlabs] %s: resposta não é ZIP (provavelmente seção não publicada). "
+                    "Início: %.120s", section, content[:120]
+                )
                 continue
 
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
