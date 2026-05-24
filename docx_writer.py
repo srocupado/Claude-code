@@ -109,7 +109,7 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
         tbl.insert(0, tblPr)
 
     tblW = OxmlElement("w:tblW")
-    tblW.set(qn("w:w"), "5081")
+    tblW.set(qn("w:w"), "5498")   # 3856 + 5498 = 9354 dxa → right edge at content margin
     tblW.set(qn("w:type"), "dxa")
     tblPr.append(tblW)
 
@@ -134,7 +134,7 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
 
     # ── Column grid (widths) ──────────────────────────────────────────────────
     tblGrid = OxmlElement("w:tblGrid")
-    for w in (1956, 3125):
+    for w in (1500, 3998):   # narrower label col → divider moves left; wider value col
         gc = OxmlElement("w:gridCol")
         gc.set(qn("w:w"), str(w))
         tblGrid.append(gc)
@@ -171,12 +171,12 @@ def _add_prazos_table(doc: Document, pub_date: date) -> date:
             trPr = OxmlElement("w:trPr")
             tr.insert(0, trPr)
         trH = OxmlElement("w:trHeight")
-        trH.set(qn("w:hRule"), "exact")
-        trH.set(qn("w:val"),   "571")
+        trH.set(qn("w:hRule"), "atLeast")   # allows row to expand for 2-line values
+        trH.set(qn("w:val"),   "400")
         trPr.append(trH)
 
         # Cell widths
-        for cell, width in zip(row.cells, (1956, 3125)):
+        for cell, width in zip(row.cells, (1500, 3998)):
             tc   = cell._tc
             tcPr = tc.find(qn("w:tcPr"))
             if tcPr is None:
