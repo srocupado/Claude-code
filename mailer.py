@@ -53,11 +53,13 @@ def _build_empty_body(target_date: date) -> str:
 
 
 def _attach_file(msg: MIMEMultipart, filepath: str):
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == ".pdf":
+        subtype = "pdf"
+    else:
+        subtype = "vnd.openxmlformats-officedocument.wordprocessingml.document"
     with open(filepath, "rb") as f:
-        part = MIMEBase(
-            "application",
-            "vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
+        part = MIMEBase("application", subtype)
         part.set_payload(f.read())
     encoders.encode_base64(part)
     part.add_header(

@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import subprocess
 from datetime import date, timedelta
 
 _MONTHS_PT = {
@@ -384,6 +385,35 @@ def _add_body_text(doc: Document, text: str, indent: bool = False):
             r.font.color.rgb = COLOR_TEXT
             if j < len(lines) - 1:
                 r.add_break()
+
+
+# ── PDF conversion ───────────────────────────────────────────────────────────
+
+def convert_to_pdf(docx_path: str) -> str | None:
+    """Convert a DOCX file to PDF using LibreOffice headless. Returns PDF path or None."""
+    pdf_path = os.path.splitext(docx_path)[0] + ".pdf"
+    try:
+        result = subprocess.run(
+            [
+                "libreoffice", "--headless", "--convert-to", "pdf",
+                "--outdir", os.path.dirname(os.path.abspath(docx_path)),
+                os.path.abspath(docx_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0 and os.path.exists(pdf_path):
+            logger.info("PDF gerado: %s", pdf_path)
+            return pdf_path
+        logger.warning(
+            "LibreOffice falhou (rc=%d): %s", result.returncode, result.stderr[:300]
+        )
+    except FileNotFoundError:
+        logger.warning("LibreOffice não encontrado — PDF não gerado.")
+    except Exception as exc:
+        logger.warning("Erro ao converter para PDF: %s", exc)
+    return None
 
 
 # ── Public API ───────────────────────────────────────────────────────────────

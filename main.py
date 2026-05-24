@@ -19,7 +19,7 @@ import schedule
 import config
 from fetcher import fetch_mps
 from generator import generate_nota_tecnica
-from docx_writer import write_nota_tecnica
+from docx_writer import write_nota_tecnica, convert_to_pdf
 from mailer import send_email, send_empty_notification
 
 os.makedirs("logs", exist_ok=True)
@@ -52,7 +52,7 @@ def run(target_date: date):
 
     logger.info("%d MP(s) encontrada(s). Gerando notas técnicas...", len(mps))
 
-    docx_files: list[str] = []
+    attachment_files: list[str] = []
     processed_mps: list[dict] = []
 
     for mp in mps:
@@ -60,20 +60,23 @@ def run(target_date: date):
         logger.info("  → Gerando nota técnica para %s...", label)
         try:
             content = generate_nota_tecnica(mp)
-            filepath = write_nota_tecnica(mp, content)
-            docx_files.append(filepath)
+            docx_path = write_nota_tecnica(mp, content)
+            attachment_files.append(docx_path)
+            pdf_path = convert_to_pdf(docx_path)
+            if pdf_path:
+                attachment_files.append(pdf_path)
             processed_mps.append(mp)
-            logger.info("    ✓ Nota salva: %s", filepath)
+            logger.info("    ✓ Nota salva: %s", docx_path)
         except Exception:
             logger.exception("    ✗ Erro ao processar %s", label)
 
-    if not docx_files:
+    if not attachment_files:
         logger.error("Nenhuma nota técnica pôde ser gerada. Encerrando sem envio.")
         return
 
-    logger.info("Enviando %d nota(s) por e-mail para %s...", len(docx_files), config.RECIPIENT_EMAIL)
+    logger.info("Enviando %d arquivo(s) por e-mail para %s...", len(attachment_files), config.RECIPIENT_EMAIL)
     try:
-        send_email(docx_files, processed_mps)
+        send_email(attachment_files, processed_mps)
         logger.info("E-mail enviado com sucesso.")
     except Exception:
         logger.exception("Falha ao enviar e-mail. As notas foram salvas em ./output/")
