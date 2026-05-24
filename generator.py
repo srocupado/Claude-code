@@ -169,7 +169,7 @@ def _research_context(mp: dict) -> str:
         max_tokens=1024,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
         messages=[{"role": "user", "content": prompt}],
-        betas=["web-search-2025-03-05"],
+        extra_headers={"anthropic-beta": "web-search-2025-03-05"},
     )
     return "\n\n".join(b.text for b in response.content if hasattr(b, "text") and b.text)
 

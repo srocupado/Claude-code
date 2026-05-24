@@ -20,8 +20,9 @@ from docx.oxml import OxmlElement
 
 logger = logging.getLogger(__name__)
 
-OUTPUT_DIR   = "output"
+OUTPUT_DIR    = "output"
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.docx")
+LOGO_PATH     = os.path.join(os.path.dirname(__file__), "podemos_logo.png")
 
 COLOR_TEXT   = RGBColor(0x33, 0x33, 0x33)   # #333333 — template color
 COLOR_RED    = RGBColor(0xFF, 0x00, 0x00)   # emendas deadline
