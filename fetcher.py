@@ -301,7 +301,7 @@ def _build_mp_dict(numero: str, year: int, period: str, text_excerpt: str, targe
             stripped,
             re.IGNORECASE | re.DOTALL,
         )
-        ementa = re.sub(r"\s+", " ", m.group(1)).strip()[:300] if m else stripped[:300]
+        ementa = re.sub(r"\s+", " ", m.group(1)).strip()[:600] if m else stripped[:600]
     texto_for_detection = texto_planalto or text_excerpt
     return {
         "numero": numero,

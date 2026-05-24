@@ -306,29 +306,41 @@ def _add_objetivos_box(doc: Document):
 
 # ── Document-level builders ──────────────────────────────────────────────────
 
-def _set_header(doc: Document, title: str, subtitle: str):
-    """Put title + subtitle in the Word page header (repeats on every page)."""
+def _set_header(doc: Document, title: str, ementa: str, subtitle: str):
+    """Page header on every page: blank → logo (right) → title → ementa → subtitle."""
     header = doc.sections[0].header
-    # Drop all existing paragraphs from the header body, then rebuild
     hdr_body = header._element
     for child in list(hdr_body):
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag == "p":
+        if tag in ("p", "tbl"):
             hdr_body.remove(child)
 
-    def _hdr_para(text: str) -> None:
+    def _hdr_para(text: str, bold: bool = True) -> None:
         p = header.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after  = Pt(0)
         r = p.add_run(text)
-        r.bold           = True
-        r.font.size      = Pt(12)
+        r.bold           = bold
+        r.font.size      = Pt(11)
         r.font.name      = "Calibri"
         r.font.color.rgb = COLOR_TEXT
 
+    # Blank top line
+    p_blank = header.add_paragraph()
+    p_blank.paragraph_format.space_before = Pt(0)
+    p_blank.paragraph_format.space_after  = Pt(0)
+
+    # Logo — right-aligned, floats above text
+    if os.path.exists(LOGO_PATH):
+        p_logo = header.add_paragraph()
+        p_logo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_logo.paragraph_format.space_before = Pt(0)
+        p_logo.paragraph_format.space_after  = Pt(0)
+        p_logo.add_run().add_picture(LOGO_PATH, height=Cm(1.5))
+
     _hdr_para(title)
-    _hdr_para("")
+    _hdr_para(ementa, bold=False)
     _hdr_para(subtitle)
 
 
@@ -393,39 +405,36 @@ def write_nota_tecnica(mp: dict, content: dict, output_dir: str = OUTPUT_DIR) ->
     _add_atencao_box(doc, emendas_end)
     _blank(doc)
 
-    # ── Title & subtitle → Word page header ──────────────────────────────────
-    title    = content.get("titulo",    "NOTA TÉCNICA MP nº " + str(mp['numero']) + "/" + str(mp['ano']))
-    subtitle = content.get("subtitulo", "Nota Informativa")
-    _set_header(doc, title, subtitle)
+    # ── Ementa — clean once, reuse in header and intro ───────────────────────
+    raw_ementa = mp.get("ementa", "")
+    ementa_clean = re.sub(r"<[^>]+>", " ", raw_ementa)
+    ementa_clean = re.sub(r"\s+", " ", ementa_clean).strip()
+    title_repeat = re.search(r"MEDIDA PROVIS[\xd3O]RIA\s+N", ementa_clean, re.IGNORECASE)
+    if title_repeat:
+        ementa_clean = ementa_clean[:title_repeat.start()].strip().rstrip(".,;")
+    if not ementa_clean.endswith("."):
+        ementa_clean += "."
+
+    # ── Title & subtitle → Word page header (every page) ─────────────────────
+    title    = content.get("titulo", f"Medida Provisória nº {mp['numero']}/{mp['ano']}")
+    subtitle = "Nota Informativa"
+    _set_header(doc, title, f"({ementa_clean})", subtitle)
 
     # ── Identification line ───────────────────────────────────────────────────
     para_ident = _new_para(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
     para_ident.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
-    edicao = "Edição Extra do" if mp.get("edicao_extra") else "do"
-    prefix_text = (
+    edicao = "Edição Extra do" if mp.get("edicao_extra") else "Edição do"
+    ementa_body = ementa_clean.rstrip(".")
+    if ementa_body:
+        ementa_body = ementa_body[0].lower() + ementa_body[1:]
+    intro_text = (
         f"A {edicao} Diário Oficial da União de {_date_pt(pub_date)}"
-        f" publicou a Medida Provisória nº {mp['numero']}/{mp['ano']}, que "
+        f" publicou a Medida Provisória nº {mp['numero']}/{mp['ano']}, que {ementa_body}."
     )
-    r_prefix = para_ident.add_run(prefix_text)
-    r_prefix.font.size      = Pt(11)
-    r_prefix.font.name      = "Arial"
-    r_prefix.font.color.rgb = COLOR_TEXT
-
-    raw_ementa = mp.get("ementa", "")
-    clean = re.sub(r"<[^>]+>", " ", raw_ementa)
-    clean = re.sub(r"\s+", " ", clean).strip()
-    # Truncate if the MP title reappears inside the ementa (Planalto page artefact)
-    title_repeat = re.search(r"MEDIDA PROVIS[\xd3O]RIA\s+N", clean, re.IGNORECASE)
-    if title_repeat:
-        clean = clean[:title_repeat.start()].strip().rstrip(".,;")
-    if not clean.endswith("."):
-        clean = clean + "."
-    ementa_text = "\u201c" + clean + "\u201d"
-    r_ementa = para_ident.add_run(ementa_text)
-    r_ementa.italic         = True
-    r_ementa.font.size      = Pt(11)
-    r_ementa.font.name      = "Arial"
-    r_ementa.font.color.rgb = COLOR_TEXT
+    r_intro = para_ident.add_run(intro_text)
+    r_intro.font.size      = Pt(11)
+    r_intro.font.name      = "Arial"
+    r_intro.font.color.rgb = COLOR_TEXT
 
 
     _blank(doc)
