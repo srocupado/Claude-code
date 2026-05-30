@@ -30,7 +30,7 @@ jobs:
           cache: 'pip'
 
       - name: Instalar LibreOffice
-        run: sudo apt-get install -y libreoffice --no-install-recommends
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer
 
       - name: Instalar dependências
         run: pip install -r requirements.txt
